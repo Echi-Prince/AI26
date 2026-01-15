@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Educational Flappy Bird</title>
+    <style>
+        :root {
+            --sky-color: #70c5ce;
+            --ground-color: #ded895;
+            --grass-color: #73bf2e;
+            --pipe-color: #73bf2e;
+            --bird-color: #f4bd39;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #333;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden; /* Prevent scrolling on Spacebar */
+        }
+
+        /* Educational Overlay */
+        .edu-panel {
+            background: #444;
+            padding: 15px 25px;
+            border-radius: 8px;
+            max-width: 400px;
+            margin-bottom: 20px;
+            text-align: center;
+            border: 1px solid #666;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+        .edu-panel h2 { margin: 0 0 10px 0; color: var(--bird-color); }
+        .code-tag { background: #222; padding: 2px 6px; border-radius: 4px; color: #aaa; font-size: 0.9em; }
+
+        /* Game Container */
+        #game-container {
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 4px solid #fff;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        canvas {
+            display: block;
+            background-color: var(--sky-color);
+        }
+
+        /* UI Overlays inside the game */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through to canvas */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-shadow: 2px 2px 0 #000;
+        }
+
+        .score {
+            position: absolute;
+            top: 10%;
+            font-size: 3rem;
+            font-weight: bold;
+            color: white;
+            z-index: 10;
+        }
+
+        .message {
+            font-size: 1.5rem;
+            color: white;
+            font-weight: bold;
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        .hidden { display: none !important; }
+
+    </style>
+</head>
+<body>
+
+    <div class="edu-panel">
+        <h2>🐥 How Game Logic Works</h2>
+        <p>
+            <strong>Gravity:</strong> Every frame, we add <span class="code-tag">0.25</span> to the bird's vertical speed (velocity).<br>
+            <strong>Lift:</strong> When you click, we set velocity to <span class="code-tag">-4.5</span> (instant upward force).<br>
+            <strong>The Loop:</strong> The <span class="code-tag">update()</span> function runs 60 times a second to redraw the canvas.
+        </p>
+    </div>
+
+    <div id="game-container">
+        <canvas id="gameCanvas" width="320" height="480"></canvas>
+        
+        <div id="ui-layer">
+            <div id="scoreDisplay" class="score">0</div>
+            <div id="startScreen" class="message">
+                PRESS SPACE<br>OR CLICK<br>TO START
+            </div>
+            <div id="gameOverScreen" class="message hidden">
+                GAME OVER<br>
+                <span style="font-size: 0.8em; color: #ddd;">Press Space to Restart</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. Setup & Configuration ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // UI Elements
+        const scoreEl = document.getElementById('scoreDisplay');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+
+        // Game State
+        let frames = 0;
+        let score = 0;
+        let highScore = localStorage.getItem('flappyHighScore') || 0;
+        let currentState = 'START'; // START, GAME, OVER
+
+        // --- 2. The Bird Object ---
+        const bird = {
+            x: 50,
+            y: 150,
+            width: 34,
+            height: 24,
+            velocity: 0,
+            gravity: 0.25,
+            jump: -4.5,
+            rotation: 0,
+            
+            draw: function() {
+                ctx.save();
+                ctx.translate(this.x + this.width/2, this.y + this.height/2);
+                
+                // Rotate bird based on velocity
+                // If falling, rotate down. If flying up, rotate up.
+                if (currentState === 'GAME') {
+                    this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
+                } else {
+                    this.rotation = 0;
+                }
+                ctx.rotate(this.rotation);
+
+                // Body (Yellow Box)
+                ctx.fillStyle = "#f4bd39";
+                ctx.fillRect(-this.width/2, -this.height/2, this.width, this.height);
+                
+                // Eye (White & Black)
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(this.width/2 - 10, -this.height/2 + 2, 10, 10);
+                ctx.fillStyle = "#000";
+                ctx.fillRect(this.width/2 - 4, -this.height/2 + 4, 4, 4);
+
+                // Beak (Orange)
+                ctx.fillStyle = "#f47039";
+                ctx.fillRect(this.width/2 - 2, 2, 12, 10);
+                
+                // Wing (White)
+                ctx.fillStyle = "#fff";
+                ctx.fillRect(-10, 2, 16, 10);
+
+                ctx.restore();
+            },
+
+            update: function() {
+                // Apply Gravity
+                this.velocity += this.gravity;
+                this.y += this.velocity;
+
+                // Floor Collision
+                if (this.y + this.height >= canvas.height - fg.height) {
+                    this.y = canvas.height - fg.height - this.height;
+                    gameOver();
+                }
+
+                // Ceiling Collision (Optional, prevents flying over pipes)
+                if (this.y < 0) {
+                    this.y = 0;
+                    this.velocity = 0;
+                }
+            },
+
+            flap: function() {
+                this.velocity = this.jump;
+            }
+        };
+
+        // --- 3. The Pipes ---
+        const pipes = {
+            items: [],
+            width: 52,
+            gap: 100, // Space between top and bottom pipe
+            dx: 2, // Speed moving left
+            
+            draw: function() {
+                for(let i = 0; i < this.items.length; i++) {
+                    let p = this.items[i];
+                    
+                    ctx.fillStyle = "#73bf2e";
+                    
+                    // Top Pipe
+                    ctx.fillRect(p.x, 0, this.width, p.y);
+                    // Pipe Cap (Visual detail)
+                    ctx.fillStyle = "#558c22"; 
+                    ctx.fillRect(p.x - 2, p.y - 20, this.width + 4, 20);
+
+                    // Bottom Pipe
+                    ctx.fillStyle = "#73bf2e";
+                    ctx.fillRect(p.x, p.y + this.gap, this.width, canvas.height - p.y - this.gap - fg.height);
+                    // Pipe Cap
+                    ctx.fillStyle = "#558c22";
+                    ctx.fillRect(p.x - 2,
