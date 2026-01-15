@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>808 Drum Machine – Upgraded</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: radial-gradient(circle at top, #1b1f2a, #0b0d12);
+      color: #e6e6e6;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .machine {
+      background: #141826;
+      padding: 22px;
+      border-radius: 16px;
+      width: 860px;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.55);
+    }
+    h1 {
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 0.85rem;
+      opacity: 0.75;
+      margin-bottom: 16px;
+    }
+    .top-controls {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+    button {
+      background: linear-gradient(135deg, #ff6b2d, #ff9255);
+      border: none;
+      border-radius: 10px;
+      padding: 10px 18px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #000;
+    }
+    button.secondary {
+      background: #2a2f3f;
+      color: #fff;
+    }
+    button:active { transform: scale(0.96); }
+    label { font-size: 0.8rem; }
+
+    .sequencer {
+      display: grid;
+      grid-template-columns: 110px repeat(16, 1fr);
+      gap: 6px;
+      margin-top: 12px;
+    }
+    .label {
+      display: flex;
+      align-items: center;
+      font-weight: 600;
+      font-size: 0.8rem;
+      gap: 6px;
+    }
+    .mute {
+      font-size: 0.65rem;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: #2a2f3f;
+      cursor: pointer;
+    }
+    .mute.active { background: #ff3b3b; }
+
+    .step {
+      padding-top: 100%;
+      position: relative;
+      border-radius: 6px;
+      background: #2a2f3f;
+      cursor: pointer;
+      transition: background 0.08s;
+    }
+    .step.active { background: #ff6b2d; }
+    .step.accent { box-shadow: inset 0 0 0 2px #fff; }
+    .step.playing { outline: 2px solid #ffffff; }
+
+    .legend {
+      margin-top: 14px;
+      font-size: 0.75rem;
+      opacity: 0.75;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="machine">
+    <h1>808 Drum Machine</h1>
+    <div class="subtitle">Upgraded: swing, accent, mute, extended voices</div>
+
+    <div class="top-controls">
+      <button id="play">Play</button>
+      <button id="clear" class="secondary">Clear</button>
+      <label>Tempo <strong><span id="bpm">120</span></strong> BPM
+        <input type="range" id="tempo" min="60" max="180" value="120" />
+      </label>
+      <label>Swing <strong><span id="swingLabel">0</span>%</strong>
+        <input type="range" id="swing" min="0" max="60" value="0" />
+      </label>
+    </div>
+
+    <div class="sequencer" id="sequencer"></div>
+
+    <div class="legend">
+      <strong>Controls:</strong> Click = step · Shift+Click = accent · M = mute track<br>
+      <strong>Sounds:</strong> Kick, Snare, Closed Hat, Open Hat, Clap (all synthesized)<br>
+      <strong>Swing:</strong> Delays every other 16th note for groove
+    </div>
+  </div>
+
+  <script>
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioContext();
+
+    const steps = 16;
+
+    const tracks = [
+      { name: 'Kick', play: playKick, mute: false },
+      { name: 'Snare', play: playSnare, mute: false },
+      { name: 'CHat', play: playHat, mute: false },
+      { name: 'OHat', play: playOpenHat, mute: false },
+      { name: 'Clap', play: playClap, mute: false }
+    ];
+
+    const pattern = tracks.map(() =>
+      Array(steps).fill(0) // 0 = off, 1 = on, 2 = accent
+    );
+
+    const seq = document.getElementById('sequencer');
+
+    tracks.forEach((track, row) => {
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.innerHTML = `${track.name} <span class="mute">M</span>`;
+      const muteBtn = label.querySelector('.mute');
+      muteBtn.onclick = () => {
+        track.mute = !track.mute;
+        muteBtn.classList.toggle('active', track.mute);
+      };
+      seq.appendChild(label);
+
+      for (let i = 0; i < steps; i++) {
+        const step = document.createElement('div');
+        step.className = 'step';
+        step.onclick = e => {
+          if (e.shiftKey) {
+            pattern[row][i] = pattern[row][i] === 2 ? 0 : 2;
+          } else {
+            pattern[row][i] = pattern[row][i] ? 0 : 1;
+          }
+          step.classList.toggle('active', pattern[row][i] > 0);
+          step.classList.toggle('accent', pattern[row][i] === 2);
+        };
+        seq.appendChild(step);
+      }
+    });
+
+    let stepIndex = 0;
+    let timer;
+    let playing = false;
+
+    const playBtn = document.getElementById('play');
+    const clearBtn = document.getElementById('clear');
+    const tempo = document.getElementById('tempo');
+    const bpmLabel = document.getElementById('bpm');
+    const swing = document.getElementById('swing');
+    const swingLabel = document.getElementById('swingLabel');
+
+    tempo.oninput = () => bpmLabel.textContent = tempo.value;
+    swing.oninput = () => swingLabel.textContent = swing.value;
+
+    playBtn.onclick = async () => {
+      if (ctx.state === 'suspended') await ctx.resume();
+      playing = !playing;
+      playBtn.textContent = playing ? 'Stop' : 'Play';
+      playing ? start() : stop();
+    };
+
+    clearBtn.onclick = () => {
+      pattern.forEach(row => row.fill(0));
+      document.querySelectorAll('.step').forEach(s => s.className = 'step');
+    };
+
+    function start() {
+      const base = () => (60000 / tempo.value) / 4;
+      timer = setInterval(() => {
+        advance();
+      }, base());
+    }
+
+    function stop() {
+      clearInterval(timer);
+      clearPlayhead();
+      stepIndex = 0;
+    }
+
+    function advance() {
+      clearPlayhead();
+      const isSwing = stepIndex % 2 === 1;
+      const delay = isSwing ? (swing.value / 100) * ((60000 / tempo.value) / 4) : 0;
+
+      setTimeout(() => {
+        tracks.forEach((t, r) => {
+          const val = pattern[r][stepIndex];
+          if (val && !t.mute) t.play(val === 2 ? 1.4 : 1);
+        });
+        markPlayhead(stepIndex);
+      }, delay);
+
+      stepIndex = (stepIndex + 1) % steps;
+    }
+
+    function clearPlayhead() {
+      document.querySelectorAll('.step.playing').forEach(s => s.classList.remove('playing'));
+    }
+
+    function markPlayhead(i) {
+      tracks.forEach((_, r) => {
+        const idx = r * (steps + 1) + 1 + i;
+        seq.children[idx].classList.add('playing');
+      });
+    }
+
+    // ---- SOUND ENGINE (808-style) ----
+
+    function playKick(v = 1) {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(160, ctx.currentTime);
+      o.frequency.exponentialRampToValueAtTime(45, ctx.currentTime + 0.15);
+      g.gain.setValueAtTime(1.2 * v, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      o.connect(g).connect(ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + 0.4);
+    }
+
+    function playSnare(v = 1) {
+      noiseBurst(0.2, 1200, 0.25 * v);
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = 180;
+      g.gain.setValueAtTime(0.3 * v, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      o.connect(g).connect(ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + 0.2);
+    }
+
+    function playHat(v = 1) {
+      noiseBurst(0.05, 6000, 0.15 * v);
+    }
+
+    function playOpenHat(v = 1) {
+      noiseBurst(0.25, 5000, 0.18 * v);
+    }
+
+    function playClap(v = 1) {
+      [0, 0.03, 0.06].forEach(t => noiseBurst(0.12, 1500, 0.25 * v, t));
+    }
+
+    function noiseBurst(length, freq, gainVal, delay = 0) {
+      const bufferSize = ctx.sampleRate * length;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.value = freq;
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(gainVal, ctx.currentTime + delay);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + length);
+
+      src.connect(filter).connect(g).connect(ctx.destination);
+      src.start(ctx.currentTime + delay);
+      src.stop(ctx.currentTime + delay + length);
+    }
+  </script>
+</body>
+</html>
