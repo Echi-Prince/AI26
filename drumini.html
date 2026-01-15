@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Educational 808 Drum Machine</title>
+    <style>
+        :root {
+            --bg-color: #2c2c2c;
+            --machine-bg: #e0e0e0;
+            --accent-orange: #ff7f00;
+            --accent-red: #d32f2f;
+            --accent-yellow: #fdd835;
+            --lcd-bg: #5c6bc0;
+            --led-on: #ff3d00;
+            --led-off: #5a1a1a;
+            --btn-active: #fff59d;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+
+        /* --- Educational Overlay --- */
+        .edu-panel {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 800px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            line-height: 1.6;
+        }
+        .edu-panel h2 { margin-top: 0; color: var(--accent-red); }
+        .edu-tag { background: #eee; padding: 2px 6px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.9em; }
+
+        /* --- The Drum Machine --- */
+        .machine-container {
+            background-color: var(--machine-bg);
+            padding: 30px;
+            border-radius: 12px;
+            border-bottom: 10px solid #999;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+            max-width: 840px;
+            width: 100%;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #999;
+            padding-bottom: 10px;
+        }
+
+        .logo {
+            font-size: 2rem;
+            font-weight: 900;
+            color: #333;
+            letter-spacing: -1px;
+        }
+        .logo span { color: var(--accent-orange); }
+
+        /* Controls Area */
+        .controls {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            align-items: center;
+            background: #d4d4d4;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #bbb;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            box-shadow: 0 3px 0 rgba(0,0,0,0.2);
+            transition: transform 0.1s;
+        }
+        .btn:active { transform: translateY(3px); box-shadow: none; }
+        
+        .btn-start { background-color: var(--accent-orange); color: white; }
+        .btn-stop { background-color: var(--accent-red); color: white; }
+        .btn-clear { background-color: #fff; border: 1px solid #999; }
+
+        .knob-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        input[type=range] { width: 100px; cursor: pointer; }
+
+        /* The Sequencer Grid */
+        .sequencer {
+            display: grid;
+            grid-template-columns: 80px repeat(16, 1fr);
+            gap: 4px;
+            background: #333;
+            padding: 10px;
+            border-radius: 6px;
+        }
+
+        /* Labels for instruments */
+        .track-label {
+            color: white;
+            display: flex;
+            align-items: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        /* Step Buttons */
+        .step {
+            width: 100%;
+            aspect-ratio: 1;
+            background-color: #555;
+            border: none;
+            border-radius: 2px;
+            cursor: pointer;
+            position: relative;
+        }
+
+        /* Colored Steps based on beat position (every 4) */
+        .step:nth-child(4n + 2) { background-color: #666; } /* Offset for label column */
+        .step:nth-child(4n + 3) { background-color: #666; }
+        .step:nth-child(4n + 4) { background-color: #666; }
+        .step:nth-child(4n + 5) { background-color: #666; }
+        
+        /* Active State (User Selected) */
+        .step.active {
+            background-color: var(--accent-yellow);
+            box-shadow: 0 0 5px var(--accent-yellow);
+        }
+        
+        /* Playing State (Sequencer Head) */
+        .step.playing {
+            border: 2px solid white;
+        }
+
+        /* Colors for specific rows */
+        .kick-row .step.active { background-color: var(--accent-red); box-shadow: 0 0 5px var(--accent-red); }
+        .snare-row .step.active { background-color: var(--accent-orange); box-shadow: 0 0 5px var(--accent-orange); }
+
+        /* Beat indicators */
+        .beat-markers {
+            display: grid;
+            grid-template-columns: 80px repeat(16, 1fr);
+            gap: 4px;
+            margin-bottom: 5px;
+        }
+        .marker {
+            text-align: center;
+            color: #666;
+            font-size: 0.7rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="edu-panel">
+        <h2>🎵 How does this work?</h2>
+        <p>This is a <strong>Step Sequencer</strong>. Time moves from left to right. The grid is divided into 16 "steps," representing one bar of music (4 beats x 4 subdivisions).</p>
+        <ul>
+            <li><strong>The Grid:</strong> Click the square buttons to activate a sound on that step.</li>
+            <li><strong>The Synthesis:</strong> There are no MP3 files here! All audio is generated in real-time using the <span class="edu-tag">Web Audio API</span>.</li>
+            <li><strong>The Math:</strong> 
+                <ul>
+                    <li><em>Kick:</em> A Sine wave oscillator that drops pitch rapidly (50Hz &rarr; 0Hz).</li>
+                    <li><em>Snare:</em> White noise (random numbers) mixed with a Triangle wave.</li>
+                    <li><em>Hi-Hat:</em> High-pass filtered white noise with a very short decay.</li>
+                </ul>
+            </li>
+        </ul>
+    </div>
+
+    <div class="machine-container">
+        <div class="header">
+            <div class="logo">Web-<span>808</span></div>
+            <div style="font-size: 0.8rem; color: #666;">Rhythm Composer</div>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-start" onclick="startSequencer()">Play</button>
+            <button class="btn btn-stop" onclick="stopSequencer()">Stop</button>
+            <button class="btn btn-clear" onclick="clearGrid()">Clear</button>
+            
+            <div class="knob-group">
+                <label style="font-size: 0.7rem; font-weight: bold;">TEMPO</label>
+                <input type="range" id="tempo" min="60" max="180" value="120" oninput="updateTempo(this.value)">
+                <span id="tempo-display" style="font-size: 0.8rem;">120 BPM</span>
+            </div>
+            
+            <div class="knob-group">
+                <label style="font-size: 0.7rem; font-weight: bold;">MASTER VOL</label>
+                <input type="range" id="volume" min="0" max="1" step="0.1" value="0.5" oninput="updateVolume(this.value)">
+            </div>
+        </div>
+
+        <div class="beat-markers">
+            <div></div> <div class="marker">1</div><div class="marker"></div><div class="marker"></div><div class="marker"></div>
+            <div class="marker">2</div><div class="marker"></div><div class="marker"></div><div class="marker"></div>
+            <div class="marker">3</div><div class="marker"></div><div class="marker"></div><div class="marker"></div>
+            <div class="marker">4</div><div class="marker"></div><div class="marker"></div><div class="marker"></div>
+        </div>
+
+        <div class="sequencer" id="grid">
+            </div>
+    </div>
+
+    <script>
+        // --- 1. Audio Engine (Synthesis) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        let masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.5;
+        masterGain.connect(audioCtx.destination);
+
+        // Utility: Create a buffer of white noise
+        const bufferSize = audioCtx.sampleRate * 2; // 2 seconds
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+
+        const SoundEngine = {
+            playKick: (time) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                
+                osc.connect(gain);
+                gain.connect(masterGain);
+                
+                // Frequency sweep (Boom effect)
+                osc.frequency.setValueAtTime(150, time);
+                osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+                
+                // Volume envelope
+                gain.gain.setValueAtTime(1, time);
+                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
+                
+                osc.start(time);
+                osc.stop(time + 0.5);
+            },
+
+            playSnare: (time) => {
+                // 1. Tone (body of snare)
+                const osc = audioCtx.createOscillator();
+                const oscGain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.connect(oscGain);
+                oscGain.connect(masterGain);
+                
+                osc.frequency.setValueAtTime(250, time);
+                oscGain.gain.setValueAtTime(0.5, time);
+                oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+                osc.start(time);
+                osc.stop(time + 0.2);
+
+                // 2. Noise (rattle)
+                const noise = audioCtx.createBufferSource();
+                const noiseFilter = audioCtx.createBiquadFilter();
+                const noiseGain = audioCtx.createGain();
+                
+                noise.buffer = buffer;
+                noiseFilter.type = 'highpass';
+                noiseFilter.frequency.value = 1000;
+                
+                noise.connect(noiseFilter);
+                noiseFilter.connect(noiseGain);
+                noiseGain.connect(masterGain);
+                
+                noiseGain.gain.setValueAtTime(0.4, time);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.25);
+                
+                noise.start(time);
+                noise.stop(time + 0.25);
+            },
+
+            playHiHat: (time) => {
+                const source = audioCtx.createBufferSource();
+                const filter = audioCtx.createBiquadFilter();
+                const gain = audioCtx.createGain();
+
+                source.buffer = buffer;
+                
+                // Remove low frequencies
+                filter.type = 'highpass';
+                filter.frequency.value = 5000;
+
+                source.connect(filter);
+                filter.connect(gain);
+                gain.connect(masterGain);
+
+                // Very short envelope
+                gain.gain.setValueAtTime(0.3, time);
+                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+
+                source.start(time);
+                source.stop(time + 0.05);
+            },
+
+            playClap: (time) => {
+                const noise = audioCtx.createBufferSource();
+                const filter = audioCtx.createBiquadFilter();
+                const gain = audioCtx.createGain();
+                
+                noise.buffer = buffer;
+                filter.type = 'bandpass';
+                filter.frequency.value = 1500;
+                
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(masterGain);
+                
+                // Clap envelope (slightly longer attack feel)
+                gain.gain.setValueAtTime(0.3, time);
+                gain.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
+                
+                noise.start(time);
+                noise.stop(time + 0.15);
+            }
+        };
+
+        // --- 2. State & Data ---
+        const instruments = ['Kick', 'Snare', 'HiHat', 'Clap'];
+        // 4 rows, 16 steps each. 0 = off, 1 = on
+        let gridData = [
+            [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,0,0], // Kick
+            [0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0], // Snare
+            [1,1,1,1, 1,1,1,1, 1,1,1,1, 1,1,1,1], // HiHat
+            [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,1,0]  // Clap
+        ];
+
+        let isPlaying = false;
+        let currentStep = 0;
+        let tempo = 120;
+        let nextNoteTime = 0;
+        let timerID = null;
+        let lookahead = 25.0; // ms
+        let scheduleAheadTime = 0.1; // sec
+
+        // --- 3. UI Generation ---
+        const gridElement = document.getElementById('grid');
+
+        function renderGrid() {
+            gridElement.innerHTML = '';
+            instruments.forEach((inst, rowIndex) => {
+                // Label
+                const label = document.createElement('div');
+                label.className = 'track-label';
+                label.innerText = inst.toUpperCase();
+                gridElement.appendChild(label);
+
+                // Steps
+                gridData[rowIndex].forEach((isActive, stepIndex) => {
+                    const btn = document.createElement('button');
+                    btn.className = `step ${inst.toLowerCase()}-row ${isActive ? 'active' : ''}`;
+                    btn.dataset.row = rowIndex;
+                    btn.dataset.step = stepIndex;
+                    btn.onclick = () => toggleStep(rowIndex, stepIndex);
+                    gridElement.appendChild(btn);
+                });
+            });
+        }
+
+        function toggleStep(row, step) {
+            gridData[row][step] = gridData[row][step] ? 0 : 1;
+            renderGrid();
+        }
+
+        // --- 4. Sequencer Logic ---
+        
+        function nextNote() {
+            const secondsPerBeat = 60.0 / tempo;
+            // 16th notes = 0.25 of a beat
+            nextNoteTime += 0.25 * secondsPerBeat; 
+            currentStep = (currentStep + 1) % 16;
+        }
+
+        function scheduleNote(stepNumber, time) {
+            // Visual update (draw ahead of time for smooth UI, or use requestAnimationFrame for sync)
+            // For simplicity in this demo, we update visuals via a timeout synced to audio time
+            const visualDelay = (time - audioCtx.currentTime) * 1000;
+            setTimeout(() => {
+                updateVisuals(stepNumber);
+            }, Math.max(0, visualDelay));
+
+            // Audio Trigger
+            instruments.forEach((inst, row) => {
+                if (gridData[row][stepNumber] === 1) {
+                    SoundEngine[`play${inst}`](time);
+                }
+            });
+        }
+
+        function scheduler() {
+            // While there are notes that will need to play before the next interval, 
+            // schedule them and advance the pointer.
+            while (nextNoteTime < audioCtx.currentTime + scheduleAheadTime) {
+                scheduleNote(currentStep, nextNoteTime);
+                nextNote();
+            }
+            timerID = setTimeout(scheduler, lookahead);
+        }
+
+        function updateVisuals(step) {
+            // Remove 'playing' class from all steps
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('playing'));
+            
+            // Add 'playing' class to current column
+            // We can select by dataset step
+            const currentSteps = document.querySelectorAll(`.step[data-step="${step}"]`);
+            currentSteps.forEach(s => s.classList.add('playing'));
+        }
+
+        // --- 5. Controls ---
+
+        function startSequencer() {
+            if (isPlaying) return;
+            
+            // Resume Audio Context if suspended (browser policy)
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            isPlaying = true;
+            currentStep = 0;
+            nextNoteTime = audioCtx.currentTime;
+            scheduler();
+        }
+
+        function stopSequencer() {
+            isPlaying = false;
+            clearTimeout(timerID);
+            document.querySelectorAll('.step').forEach(s => s.classList.remove('playing'));
+        }
+
+        function clearGrid() {
+            gridData = gridData.map(row => row.map(() => 0));
+            renderGrid();
+        }
+
+        function updateTempo(val) {
+            tempo = val;
+            document.getElementById('tempo-display').innerText = `${val} BPM`;
+        }
+        
+        function updateVolume(val) {
+            masterGain.gain.value = val;
+        }
+
+        // Initialize
+        renderGrid();
+
+    </script>
+</body>
+</html>
