@@ -11,3 +11,8 @@ Remember to tell the AI what system to use. For example, HTML + CSS + JS.
 ```
 Use HTML, CSS, and HTML. Just one page, all in line. 
 ```
+
+drok.html
+drumini.html
+drumgpt.html
+drumlaude.html
