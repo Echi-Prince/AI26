@@ -21,3 +21,5 @@ add these to the end of the link up above to find the websites
 ```drumini.html```
 ```drumgpt.html```
 ```drumlaude.html```
+```drumgpt2.html```
+```flappygpt.html```
