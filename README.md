@@ -1,2 +1,4 @@
 # AI26
-more hahn
+I will be putting notes from class in here. There will be typos and spelling mistakes.
+
+
