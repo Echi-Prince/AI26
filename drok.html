@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>808 Style Drum Machine • Educational</title>
+<style>
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: #0f0f1a;
+    color: #e0e0ff;
+    margin: 0;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+  }
+
+  .container {
+    max-width: 920px;
+    width: 100%;
+  }
+
+  h1 {
+    text-align: center;
+    color: #ff5555;
+    margin: 10px 0 25px;
+    font-size: 2.1rem;
+    letter-spacing: 2px;
+  }
+
+  .controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    flex-wrap: wrap;
+    gap: 15px;
+  }
+
+  button {
+    padding: 12px 22px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    border: none;
+    border-radius: 6px;
+    background: #444466;
+    color: white;
+    transition: all 0.13s;
+  }
+
+  button:hover    { background: #666688; }
+  button.active   { background: #ff5555; box-shadow: 0 0 12px #ff5555aa; }
+  button.trigger  { width: 54px; height: 54px; font-size: 1.4rem; background: #2a2a44; }
+  button.trigger:hover { background: #3a3a66; }
+  button.trigger.active { background: #ff7777; transform: scale(1.08); }
+
+  .bpm-control {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  input[type=range] {
+    width: 140px;
+    accent-color: #ff5555;
+  }
+
+  .sequencer {
+    display: grid;
+    grid-template-columns: 110px repeat(16, 1fr);
+    gap: 4px 6px;
+    background: #111122;
+    padding: 16px;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px #0008;
+  }
+
+  .row-label {
+    text-align: right;
+    font-weight: bold;
+    color: #88aaff;
+    padding-right: 12px;
+    font-size: 1.1rem;
+    align-self: center;
+  }
+
+  .step {
+    aspect-ratio: 1;
+    background: #1a1a33;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.12s;
+    border: 1px solid #222244;
+  }
+
+  .step.on {
+    background: #ff5555;
+    box-shadow: 0 0 12px #ff555588;
+    border-color: #ff7777;
+  }
+
+  .step.playing {
+    background: #ffdd77 !important;
+    box-shadow: 0 0 18px #ffdd77cc;
+    transform: scale(1.12);
+    z-index: 2;
+  }
+
+  .info {
+    margin-top: 30px;
+    font-size: 0.9rem;
+    color: #aaccff;
+    text-align: center;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <h1>808 Style Drum Machine</h1>
+
+  <div class="controls">
+    <div>
+      <button id="playBtn">▶ PLAY</button>
+      <button id="stopBtn">■ STOP</button>
+      <button id="clearBtn">Clear Pattern</button>
+    </div>
+
+    <div class="bpm-control">
+      <label>BPM: <span id="bpmValue">120</span></label>
+      <input type="range" id="bpm" min="60" max="180" value="120" step="1">
+    </div>
+  </div>
+
+  <div class="sequencer" id="sequencer"></div>
+
+  <div class="info">
+    Click the pads to turn steps on/off • Each row = one drum sound<br>
+    Classic Roland TR-808 inspired sounds made with Web Audio API
+  </div>
+
+</div>
+
+<script>
+// ────────────────────────────────────────────────
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+const sounds = {
+  kick:    create808Kick(),
+  snare:   createSnare(),
+  clap:    createClap(),
+  hihat:   createHiHat(),
+  ohihat:  createOpenHiHat(),
+  tom:     createTom(),
+  rim:     createRimshot(),
+  cowbell: createCowbell()
+};
+
+const names = [
+  "Kick", "Snare", "Clap", "Closed Hat", "Open Hat", "Low Tom", "Rimshot", "Cowbell"
+];
+
+// ─── UI creation ─────────────────────────────────
+const sequencer = document.getElementById("sequencer");
+const grid = [];
+
+names.forEach((name, row) => {
+  const label = document.createElement("div");
+  label.className = "row-label";
+  label.textContent = name;
+  sequencer.appendChild(label);
+
+  grid[row] = [];
+  for (let step = 0; step < 16; step++) {
+    const pad = document.createElement("div");
+    pad.className = "step";
+    pad.dataset.row = row;
+    pad.dataset.step = step;
+    pad.onclick = () => pad.classList.toggle("on");
+    sequencer.appendChild(pad);
+    grid[row][step] = pad;
+  }
+});
+
+// ─── Transport ───────────────────────────────────
+let playing = false;
+let currentStep = 0;
+let bpm = 120;
+let intervalId = null;
+
+const bpmSlider = document.getElementById("bpm");
+const bpmDisplay = document.getElementById("bpmValue");
+
+bpmSlider.oninput = () => {
+  bpm = +bpmSlider.value;
+  bpmDisplay.textContent = bpm;
+  if (playing) restartScheduler();
+};
+
+function restartScheduler() {
+  clearInterval(intervalId);
+  currentStep = 0;
+  intervalId = setInterval(scheduleStep, (60 / bpm) * 1000 / 4);
+}
+
+function scheduleStep() {
+  // Light up current step
+  document.querySelectorAll(".step.playing").forEach(el => el.classList.remove("playing"));
+
+  for (let row = 0; row < grid.length; row++) {
+    const pad = grid[row][currentStep];
+    pad.classList.add("playing");
+
+    if (pad.classList.contains("on")) {
+      const soundName = Object.keys(sounds)[row];
+      playSound(soundName);
+    }
+  }
+
+  currentStep = (currentStep + 1) % 16;
+}
+
+function playSound(name) {
+  const src = sounds[name]();
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.9, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+  src.connect(gain).connect(audioCtx.destination);
+}
+
+// ─── Controls ────────────────────────────────────
+document.getElementById("playBtn").onclick = () => {
+  if (!playing) {
+    audioCtx.resume();
+    playing = true;
+    currentStep = 0;
+    document.getElementById("playBtn").textContent = "▶ PLAYING";
+    document.getElementById("playBtn").classList.add("active");
+    restartScheduler();
+  }
+};
+
+document.getElementById("stopBtn").onclick = () => {
+  playing = false;
+  clearInterval(intervalId);
+  document.querySelectorAll(".step.playing").forEach(el => el.classList.remove("playing"));
+  document.getElementById("playBtn").textContent = "▶ PLAY";
+  document.getElementById("playBtn").classList.remove("active");
+};
+
+document.getElementById("clearBtn").onclick = () => {
+  document.querySelectorAll(".step.on").forEach(el => el.classList.remove("on"));
+};
+
+// ─── Sound Generators (classic 808 approximations) ────────
+
+function create808Kick() {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.12);
+
+  filter.type = 'lowpass';
+  filter.frequency.value = 400;
+
+  gain.gain.setValueAtTime(1.4, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.45);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.5);
+
+  return () => create808Kick(); // factory
+}
+
+function createSnare() {
+  const noise = createNoise();
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.9, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+  noise.connect(gain).connect(audioCtx.destination);
+  noise.start();
+  noise.stop(audioCtx.currentTime + 0.2);
+  return () => createSnare();
+}
+
+function createClap() {
+  return () => {
+    for (let i = 0; i < 2; i++) {
+      setTimeout(() => {
+        const n = createNoise();
+        const g = audioCtx.createGain();
+        g.gain.setValueAtTime(0.7, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.14);
+        n.connect(g).connect(audioCtx.destination);
+        n.start();
+        n.stop(audioCtx.currentTime + 0.16);
+      }, i * 8);
+    }
+  };
+}
+
+function createHiHat() {
+  const noise = createNoise();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = 7000;
+  gain.gain.setValueAtTime(0.6, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+  noise.connect(filter).connect(gain).connect(audioCtx.destination);
+  noise.start();
+  noise.stop(audioCtx.currentTime + 0.06);
+  return () => createHiHat();
+}
+
+function createOpenHiHat() {
+  const noise = createNoise();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = 5000;
+  gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.32);
+  noise.connect(filter).connect(gain).connect(audioCtx.destination);
+  noise.start();
+  noise.stop(audioCtx.currentTime + 0.4);
+  return () => createOpenHiHat();
+}
+
+function createTom() {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(160, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.18);
+  gain.gain.setValueAtTime(0.9, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.4);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.45);
+  return () => createTom();
+}
+
+function createRimshot() {
+  const noise = createNoise(0.04);
+  const gainN = audioCtx.createGain();
+  gainN.gain.setValueAtTime(0.5, audioCtx.currentTime);
+  gainN.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.06);
+
+  const osc = audioCtx.createOscillator();
+  osc.type = 'triangle';
+  osc.frequency.value = 200;
+  const gainO = audioCtx.createGain();
+  gainO.gain.setValueAtTime(0.4, audioCtx.currentTime);
+  gainO.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
+
+  noise.connect(gainN).connect(audioCtx.destination);
+  osc.connect(gainO).connect(audioCtx.destination);
+  noise.start(); noise.stop(audioCtx.currentTime + 0.08);
+  osc.start();   osc.stop(audioCtx.currentTime + 0.1);
+  return () => createRimshot();
+}
+
+function createCowbell() {
+  const osc1 = audioCtx.createOscillator();
+  const osc2 = audioCtx.createOscillator();
+  osc1.frequency.value = 540;
+  osc2.frequency.value = 800;
+  const gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.12);
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc1.start(); osc2.start();
+  osc1.stop(audioCtx.currentTime + 0.15);
+  osc2.stop(audioCtx.currentTime + 0.15);
+  return () => createCowbell();
+}
+
+function createNoise(duration = 0.1) {
+  const bufferSize = audioCtx.sampleRate * duration;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buffer;
+  return noise;
+}
+
+</script>
+</body>
+</html>
